@@ -1,4 +1,5 @@
 import { pgTable, text, timestamp, boolean, integer, jsonb, uuid, varchar, index } from 'drizzle-orm/pg-core';
+import { vector } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 // --- Better Auth core tables (drizzleAdapter, provider pg, generateId uuid) ---
@@ -56,7 +57,6 @@ export const verification = pgTable('verification', {
   index('verification_identifier_idx').on(t.identifier),
 ]);
 
-// Backwards compat alias (plural) — keep referencing same table via view? But we expose plural alias for legacy code.
 export const users = user;
 export const sessions = session;
 
@@ -85,6 +85,7 @@ export const messages = pgTable('messages', {
   tokenCount: integer('token_count'),
   isError: boolean('is_error').default(false).notNull(),
   parentId: uuid('parent_id'),
+  embedding: vector('embedding', { dimensions: 1536 }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   index('messages_conversation_id_idx').on(t.conversationId),
@@ -102,6 +103,8 @@ export const files = pgTable('files', {
   mimeType: varchar('mime_type', { length: 200 }).notNull(),
   size: integer('size').notNull(),
   storagePath: text('storage_path').notNull(),
+  embedding: vector('embedding', { dimensions: 1536 }),
+  embeddingModel: varchar('embedding_model', { length: 120 }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 

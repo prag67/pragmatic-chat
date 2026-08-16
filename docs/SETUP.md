@@ -50,9 +50,9 @@ npx @better-auth/cli generate --output src/db/auth-schema.ts
 ## Tests
 
 ```bash
-npm --workspace apps/api run test:ci   # vitest+supertest (21+ tests: auth+balances/presets+models/search/admin)
+npm --workspace apps/api run test:ci   # vitest+supertest (23+ tests: auth+balances/presets+models/search/admin+vector/files)
 npm test                              # root workspaces (api + web)
-npm --workspace apps/web run test     # RTL 7 tests incl. BalanceWidget/Presets/Search/ModelSelector
+npm --workspace apps/web run test     # RTL 9 tests incl. BalanceWidget/Presets/Search/ModelSelector + file embedding
 npx playwright test                   # e2e (TODO)
 ```
 
@@ -75,6 +75,11 @@ No server listen when `NODE_ENV=test` / `VITEST`.
 - `GET /api/search?q=&limit=` → ILIKE over own conversations/messages/files (future pgvector); web `SearchBar` in `Sidebar`.
 - `GET /api/admin/users` + `POST /api/admin/balances/adjust` + `GET /api/admin/balances/:userId` → `role=admin` guard; web `AdminPanel` in `Sidebar`.
 - Chat now deducts credits: `balances.tokenCredits` + `transactions` `usage` on each `/api/messages/chat/completions` (est. tokens = len/4); `BalanceWidget` invalidates after chat.
+
+## Embeddings & pgvector (slice 5)
+- `vector 0.8.0` extension `CREATE EXTENSION vector`, `files.embedding vector(1536)` + `messages.embedding vector(1536)` + `hnsw` indexes `0001_tidy_moon`.
+- `POST /api/files/upload` auto-embeds via `text-embedding-v2` (DashScope) fallback `pseudoEmbedding(1536)` deterministic unit vector; `GET /api/search` tries cosine `embedding <=> vector` then ILIKE.
+- Migrate: `scripts/migrate-mongo-to-postgres.mjs` now Better-Auth aware (`user`/`account`/`balances`), idempotent, `docker --network librechat_default --dry-run` verified; see `docs/migration.md` + cutover runbook 2w rollback.
 
 ## File upload
 `POST /api/files/upload` multipart `file` → `./uploads` (shared `../librechat/uploads` via volume). `hono/body-limit` 20MB.

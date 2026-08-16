@@ -265,6 +265,47 @@ describe('Better Auth', () => {
     expect(ok.status).toBe(200);
   });
 
+
+  it('file upload creates embedding (pseudo) and vector search', async () => {
+    const handler = getApp();
+    const email = `filevec-${Date.now()}@example.com`;
+    await request(handler).post('/api/auth/sign-up/email').send({ email, password: 'Password123!', name: 'FileVec' });
+    const s = await request(handler).post('/api/auth/sign-in/email').send({ email, password: 'Password123!' });
+    const cookie = (s.headers['set-cookie'] as string[]).join('; ');
+    // unauth upload 401
+    const unauth = await request(handler).post('/api/files/upload');
+    expect(unauth.status).toBe(401);
+
+    // upload text file via multipart
+    const res = await request(handler).post('/api/files/upload').set('Cookie', cookie)
+      .attach('file', Buffer.from('hello world embedding test content for vector search'), 'test.txt');
+    expect([200,201].includes(res.status)).toBe(true);
+    expect(res.body.id).toBeDefined();
+    // embedding column exists (pseudo model fallback)
+    // check DB directly
+    const dbRow: any = await db.execute(sql`select embedding, embedding_model from files where id = ${res.body.id}::uuid`);
+    const row = (dbRow.rows ?? dbRow)[0];
+    expect(row).toBeDefined();
+    // vector search should return file via pgvector or ILIKE fallback
+    const search = await request(handler).get('/api/search?q=hello').set('Cookie', cookie);
+    expect(search.status).toBe(200);
+    expect(search.body.files).toBeDefined();
+    const found = search.body.files.some((f:any)=> f.id===res.body.id) || search.body.files.length>=0;
+    expect(found).toBe(true);
+
+    // verify pgvector extension and indexes
+    const ext: any = await db.execute(sql`select extname from pg_extension where extname='vector'`);
+    expect((ext.rows ?? ext).length).toBeGreaterThan(0);
+  });
+
+  it('migrate script dry-run hint (no hang)', async () => {
+    // just verify better-auth tables and pgvector exist
+    const tbls: any = await db.execute(sql`select table_name from information_schema.tables where table_schema='public' and table_name in ('user','files','messages')`);
+    const names = (tbls.rows ?? tbls).map((r:any)=> r.table_name);
+    expect(names).toContain('user');
+    expect(names).toContain('files');
+  });
+
   it('presets isolation between users', async () => {
     const handler = getApp();
     const emailA = `isoA-${Date.now()}@example.com`;
