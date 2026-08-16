@@ -1,0 +1,76 @@
+# Pragmatic v2 — side-by-side with LibreChat (legacy on :3080)
+# This compose is INDEPENDENT. Run alongside /opt/librechat/docker-compose.yml
+# Ports: api :4000, web :5173, postgres :5433, redis :6380
+services:
+  pragmatic-postgres:
+    image: pgvector/pgvector:0.8.0-pg16
+    container_name: pragmatic-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pragmatic
+      POSTGRES_USER: pragmatic
+      POSTGRES_PASSWORD: pragmatic
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pragmatic_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pragmatic -d pragmatic"]
+      interval: 5s
+      retries: 10
+
+  pragmatic-redis:
+    image: redis:7-alpine
+    container_name: pragmatic-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - pragmatic_redis:/data
+
+  pragmatic-api:
+    image: node:22-alpine
+    container_name: pragmatic-api
+    working_dir: /app
+    command: sh -c "npm install --prefix apps/api --omit=dev 2>&1 | tail -1; npm --workspace apps/api run db:migrate 2>&1 | tail -20; node apps/api/dist/index.js"
+    # For dev, override with: docker compose run --rm pragmatic-api npm --workspace apps/api run dev
+    ports:
+      - "127.0.0.1:4000:4000"
+    depends_on:
+      pragmatic-postgres:
+        condition: service_healthy
+      pragmatic-redis:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://pragmatic:pragmatic@pragmatic-postgres:5432/pragmatic
+      REDIS_URL: redis://pragmatic-redis:6379
+      PORT: 4000
+      # re-use existing qwen-proxy from librechat network (attach to librechat default network externally)
+      QWEN_PROXY_URL: http://host.docker.internal:8081
+    volumes:
+      - ./:/app
+      - /app/apps/api/node_modules
+      - /app/node_modules
+      - ../librechat/uploads:/app/uploads
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  pragmatic-web:
+    image: node:22-alpine
+    container_name: pragmatic-web
+    working_dir: /app/apps/web
+    command: sh -c "npm install 2>&1 | tail -1; npm run dev -- --host 0.0.0.0 --port 5173"
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      - pragmatic-api
+    volumes:
+      - ./:/app
+      - /app/apps/web/node_modules
+      - /app/node_modules
+
+volumes:
+  pragmatic_pgdata:
+  pragmatic_redis:
