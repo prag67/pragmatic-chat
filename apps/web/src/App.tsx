@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 
 export default function App() {
   const [health, setHealth] = useState<any>(null);
-  useEffect(() => { fetch('/health').then(r=>r.json()).then(setHealth).catch(()=>setHealth({status:'api offline'})); }, []);
+  useEffect(() => { fetch(window.location.pathname.startsWith('/v2') ? '/v2/health' : '/health').then(r=>r.json()).then(setHealth).catch(()=>setHealth({status:'api offline'})); }, []);
   return (
     <div className="min-h-screen flex flex-col">
       <header className="border-b sticky top-0 bg-white/80 backdrop-blur z-10">
