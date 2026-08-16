@@ -17,6 +17,15 @@ global.fetch = async (input, init) => {
   if (url.includes('/api/balances/transactions')) {
     return new Response(JSON.stringify([]), { status: 200, headers: { 'content-type': 'application/json' } });
   }
+  if (url.includes('/api/models')) {
+    return new Response(JSON.stringify({ object:'list', data:[{id:'qwen-plus', object:'model'}] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+  if (url.includes('/api/search')) {
+    return new Response(JSON.stringify({ conversations:[], messages:[], files:[] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+  if (url.includes('/api/admin')) {
+    return new Response(JSON.stringify({ error:'Forbidden' }), { status: 403, headers: { 'content-type': 'application/json' } });
+  }
   if (url.includes('/api/presets')) {
     return new Response(JSON.stringify([]), { status: 200, headers: { 'content-type': 'application/json' } });
   }

@@ -13,6 +13,9 @@ import messages from './modules/messages.js';
 import files from './modules/files.js';
 import balances from './modules/balances.js';
 import presets from './modules/presets.js';
+import models from './modules/models.js';
+import search from './modules/search.js';
+import admin from './modules/admin.js';
 import health from './modules/health.js';
 
 const app = new OpenAPIHono();
@@ -30,6 +33,9 @@ app.route('/api/messages', messages);
 app.route('/api/files', files);
 app.route('/api/balances', balances);
 app.route('/api/presets', presets);
+app.route('/api/models', models);
+app.route('/api/search', search);
+app.route('/api/admin', admin);
 
 app.doc('/doc', {
   openapi: '3.0.0',

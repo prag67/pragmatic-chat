@@ -50,9 +50,9 @@ npx @better-auth/cli generate --output src/db/auth-schema.ts
 ## Tests
 
 ```bash
-npm --workspace apps/api run test:ci   # vitest+supertest (21 tests: auth+balances/presets)
+npm --workspace apps/api run test:ci   # vitest+supertest (21+ tests: auth+balances/presets+models/search/admin)
 npm test                              # root workspaces (api + web)
-npm --workspace apps/web run test     # RTL 5 tests incl. BalanceWidget/Presets
+npm --workspace apps/web run test     # RTL 7 tests incl. BalanceWidget/Presets/Search/ModelSelector
 npx playwright test                   # e2e (TODO)
 ```
 
@@ -70,11 +70,17 @@ No server listen when `NODE_ENV=test` / `VITEST`.
 - `GET/POST /api/presets`, `GET/PATCH/DELETE /api/presets/:id` — user-scoped JSONB presets; see `docs/billing.md` + `/doc#presets`.
 - Web: `Sidebar` embeds `BalanceWidget` (jade card + tx toggle) + `PresetsModal` (plum) via `lib/balances.ts` / `lib/presets.ts`.
 
+## Models / Search / Admin (slice 4)
+- `GET /api/models` → proxies qwen-proxy fallback static 3 models; web `ModelSelector` in `ChatView` passes `model` to `streamChat`.
+- `GET /api/search?q=&limit=` → ILIKE over own conversations/messages/files (future pgvector); web `SearchBar` in `Sidebar`.
+- `GET /api/admin/users` + `POST /api/admin/balances/adjust` + `GET /api/admin/balances/:userId` → `role=admin` guard; web `AdminPanel` in `Sidebar`.
+- Chat now deducts credits: `balances.tokenCredits` + `transactions` `usage` on each `/api/messages/chat/completions` (est. tokens = len/4); `BalanceWidget` invalidates after chat.
+
 ## File upload
 `POST /api/files/upload` multipart `file` → `./uploads` (shared `../librechat/uploads` via volume). `hono/body-limit` 20MB.
 
-## Chat completions SSE
-`POST /api/messages/chat/completions` {model,messages,stream,conversationId?} → proxies `QWEN_PROXY_URL/compatible-mode/v1/chat/completions` with `DASHSCOPE_API_KEY`, persists `messages` rows, streams `text/event-stream`.
+## Chat completions SSE (+ billing)
+`POST /api/messages/chat/completions` {model,messages,stream,conversationId?} → proxies `QWEN_PROXY_URL/compatible-mode/v1/chat/completions` with `DASHSCOPE_API_KEY`, persists `messages` rows, streams `text/event-stream`, **deducts** `balances`/`transactions` (see `docs/search.md`).
 
 ## Deploy / Rollback
 Shadow mode: both stacks run, Postgres empty. Migrate via `scripts/migrate-mongo-to-postgres.mjs`. Keep dormant until cutover.

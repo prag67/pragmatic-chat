@@ -4,6 +4,8 @@ import { Badge } from './ui/badge';
 import { useAuth } from '../lib/auth';
 import { BalanceWidget } from './BalanceWidget';
 import { PresetsModal } from './PresetsModal';
+import { SearchBar } from './SearchBar';
+import { AdminPanel } from './AdminPanel';
 
 export function Sidebar({ selected, onSelect }: { selected: string | null; onSelect: (id:string|null)=>void }){
   const { user } = useAuth();
@@ -22,8 +24,10 @@ export function Sidebar({ selected, onSelect }: { selected: string | null; onSel
         }} disabled={create.isPending}>
           <span className="mr-2">✦</span> บทสนทนาใหม่
         </Button>
+        <SearchBar />
         <BalanceWidget />
         <PresetsModal />
+        <AdminPanel />
       </div>
       <div className="flex-1 overflow-y-auto px-3 space-y-1">
         {isLoading && <div className="text-xs text-mist-500 p-3">โหลด…</div>}

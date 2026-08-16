@@ -196,6 +196,75 @@ describe('Better Auth', () => {
     expect(after.status).toBe(404);
   });
 
+
+  it('models list public', async () => {
+    const handler = getApp();
+    const res = await request(handler).get('/api/models');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toBeDefined();
+    expect(Array.isArray(res.body.data)).toBe(true);
+    expect(res.body.data.length).toBeGreaterThan(0);
+  });
+
+  it('search requires auth and returns own results', async () => {
+    const handler = getApp();
+    const unauth = await request(handler).get('/api/search?q=hello');
+    expect(unauth.status).toBe(401);
+    const email = `search-${Date.now()}@example.com`;
+    await request(handler).post('/api/auth/sign-up/email').send({ email, password: 'Password123!', name: 'Search' });
+    const s = await request(handler).post('/api/auth/sign-in/email').send({ email, password: 'Password123!' });
+    const cookie = (s.headers['set-cookie'] as string[]).join('; ');
+    // create a conversation to search
+    await request(handler).post('/api/conversations').set('Cookie', cookie).send({ title: 'hello world search' });
+    const res = await request(handler).get('/api/search?q=hello').set('Cookie', cookie);
+    expect(res.status).toBe(200);
+    expect(res.body.conversations).toBeDefined();
+    expect(Array.isArray(res.body.messages)).toBe(true);
+  });
+
+  it('admin requires admin role', async () => {
+    const handler = getApp();
+    const email = `adminChk-${Date.now()}@example.com`;
+    await request(handler).post('/api/auth/sign-up/email').send({ email, password: 'Password123!', name: 'Chk' });
+    const s = await request(handler).post('/api/auth/sign-in/email').send({ email, password: 'Password123!' });
+    const cookie = (s.headers['set-cookie'] as string[]).join('; ');
+    const list = await request(handler).get('/api/admin/users').set('Cookie', cookie);
+    expect(list.status).toBe(403);
+    const adj = await request(handler).post('/api/admin/balances/adjust').set('Cookie', cookie).send({ userId: '00000000-0000-0000-0000-000000000000', amount: 10 });
+    expect(adj.status).toBe(403);
+  });
+
+  it('admin can adjust balance', async () => {
+    const handler = getApp();
+    const adminEmail = `admin-${Date.now()}@example.com`;
+    await request(handler).post('/api/auth/sign-up/email').send({ email: adminEmail, password: 'Password123!', name: 'Admin' });
+    // make admin via DB directly
+    await db.execute(sql`update "user" set role='admin' where email=${adminEmail}`);
+    const sAdmin = await request(handler).post('/api/auth/sign-in/email').send({ email: adminEmail, password: 'Password123!' });
+    const cAdmin = (sAdmin.headers['set-cookie'] as string[]).join('; ');
+    const userEmail = `userBal-${Date.now()}@example.com`;
+    await request(handler).post('/api/auth/sign-up/email').send({ email: userEmail, password: 'Password123!', name: 'UserBal' });
+    const sUser = await request(handler).post('/api/auth/sign-in/email').send({ email: userEmail, password: 'Password123!' });
+    const cUser = (sUser.headers['set-cookie'] as string[]).join('; ');
+    // get user id via session
+    const sess = await request(handler).get('/api/auth/get-session').set('Cookie', cUser);
+    const uid = sess.body.user.id;
+    const before = await request(handler).get('/api/balances/me').set('Cookie', cUser);
+    expect(before.status).toBe(200);
+    const adj = await request(handler).post('/api/admin/balances/adjust').set('Cookie', cAdmin).send({ userId: uid, amount: 500, reason: 'test topup' });
+    expect(adj.status).toBe(200);
+    expect(adj.body.tokenCredits).toBe((before.body.tokenCredits||0)+500);
+    const after = await request(handler).get('/api/balances/me').set('Cookie', cUser);
+    expect(after.body.tokenCredits).toBe((before.body.tokenCredits||0)+500);
+    const tx = await request(handler).get('/api/balances/transactions').set('Cookie', cUser);
+    expect(tx.body.some((x:any)=> x.type==='admin_topup')).toBe(true);
+    // non-admin cannot get admin balance endpoint
+    const forbidden = await request(handler).get(`/api/admin/balances/${uid}`).set('Cookie', cUser);
+    expect(forbidden.status).toBe(403);
+    const ok = await request(handler).get(`/api/admin/balances/${uid}`).set('Cookie', cAdmin);
+    expect(ok.status).toBe(200);
+  });
+
   it('presets isolation between users', async () => {
     const handler = getApp();
     const emailA = `isoA-${Date.now()}@example.com`;

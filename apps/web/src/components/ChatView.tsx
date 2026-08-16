@@ -4,6 +4,7 @@ import { apiJson } from '../lib/api';
 import { Button } from './ui/button';
 import { Textarea } from './ui/input';
 import { Badge } from './ui/badge';
+import { ModelSelector } from './ModelSelector';
 import { useQueryClient } from '@tanstack/react-query';
 
 function MessageBubble({ role, content }: { role:string; content:string }){
@@ -23,6 +24,7 @@ export function ChatView({ id, onCreated }: { id: string | null; onCreated?: (ne
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState('');
   const [busy, setBusy] = useState(false);
+  const [model, setModel] = useState('qwen-plus');
   const scroller = useRef<HTMLDivElement>(null);
 
   const messages = convo?.messages ?? [];
@@ -51,7 +53,7 @@ export function ChatView({ id, onCreated }: { id: string | null; onCreated?: (ne
     const history = [...messages.map(m=>({role:m.role, content:m.content})), { role:'user', content: text }];
     let acc='';
     try{
-      await streamChat({ conversationId: convId!, messages: history }, (delta)=>{ acc+=delta; setStreaming(acc); });
+      await streamChat({ conversationId: convId!, messages: history, model }, (delta)=>{ acc+=delta; setStreaming(acc); });
     }catch(e:any){
       setStreaming(prev=> prev || `ผิดพลาด: ${e.message}`);
     } finally {
@@ -59,6 +61,8 @@ export function ChatView({ id, onCreated }: { id: string | null; onCreated?: (ne
       setStreaming('');
       qc.invalidateQueries({queryKey:['conversation', convId]});
       qc.invalidateQueries({queryKey:['conversations']});
+      qc.invalidateQueries({queryKey:['balance']});
+      qc.invalidateQueries({queryKey:['transactions']});
     }
   };
 
@@ -77,7 +81,7 @@ export function ChatView({ id, onCreated }: { id: string | null; onCreated?: (ne
           <h2 className="text-2xl font-semibold font-display">เริ่มบทสนทนาใหม่</h2>
           <p className="text-sm text-mist-500">พิมพ์ข้อความด้านล่าง — ระบบจะสตรีมคำตอบผ่าน <code className="bg-sand-100 px-1.5 py-0.5 rounded">POST /api/messages/chat/completions</code> (Qwen proxy) และบันทึกลง Postgres อัตโนมัติ</p>
           <div className="flex gap-2 justify-center text-xs">
-            <Badge>qwen-plus</Badge><Badge variant="plum">pgvector</Badge><Badge>ไทย</Badge>
+            <span className="inline-flex items-center gap-2"><ModelSelector value={model} onChange={setModel} /></span><Badge variant="plum">pgvector</Badge><Badge>ไทย</Badge>
           </div>
           <div className="pt-2">
             <div className="bg-white rounded-2xl border border-sand-200 shadow-soft p-3 flex gap-2 items-end">
@@ -101,7 +105,7 @@ export function ChatView({ id, onCreated }: { id: string | null; onCreated?: (ne
             <div className="text-xs text-mist-500">{convo?.model || 'qwen-plus'} • {messages.length} ข้อความ</div>
           </div>
         </div>
-        <div className="flex items-center gap-2"><Badge variant="sand">{busy ? 'กำลังสตรีม…' : 'พร้อม'}</Badge></div>
+        <div className="flex items-center gap-2"><ModelSelector value={model} onChange={setModel} /><Badge variant="sand">{busy ? 'กำลังสตรีม…' : 'พร้อม'}</Badge></div>
       </header>
 
       <div ref={scroller} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-sand">

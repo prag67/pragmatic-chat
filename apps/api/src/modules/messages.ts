@@ -1,8 +1,8 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { OpenAPIHono } from '@hono/zod-openapi';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { messages, conversations } from '../db/schema.js';
+import { messages, conversations, balances, transactions } from '../db/schema.js';
 import { auth } from '../lib/auth.js';
 import { env } from '../lib/env.js';
 
@@ -13,6 +13,16 @@ async function getUserId(c: any): Promise<string | null> {
     const sess = await auth.api.getSession({ headers: c.req.raw.headers });
     return (sess as any)?.user?.id ?? null;
   } catch { return null; }
+}
+
+
+async function deductCredits(userId: string, amount: number, reason: string){
+  let bal = await db.query.balances.findFirst({ where: eq(balances.userId, userId) });
+  if(!bal){ const [nb] = await db.insert(balances).values({ userId, tokenCredits: 0 }).returning(); bal = nb; }
+  const newVal = (bal.tokenCredits ?? 0) + amount;
+  await db.update(balances).set({ tokenCredits: newVal, updatedAt: new Date() }).where(eq(balances.userId, userId));
+  await db.insert(transactions).values({ userId, amount, type: amount<0 ? 'usage' : 'topup', reason }).catch(()=>{});
+  return newVal;
 }
 
 const createMessageRoute = createRoute({
@@ -102,12 +112,13 @@ app.openapi(chatCompletionsRoute, async (c) => {
   const isStream = body.stream === true;
 
   if (!isStream) {
-    // Non-stream: buffer, persist assistant content, return JSON
     const data = await upstreamRes.json() as any;
     const content = data?.choices?.[0]?.message?.content ?? '';
     if (assistantMessageId && content) {
       await db.update(messages).set({ content }).where(eq(messages.id, assistantMessageId));
     }
+    const tokens = Math.ceil((content?.length || 0)/4) || 1;
+    await deductCredits(userId, -Math.max(1, Math.min(1000, tokens)), 'chat non-stream ' + (body.model || 'qwen')).catch(()=>{});
     return c.json(data, upstreamRes.status as any);
   }
 
@@ -138,7 +149,9 @@ app.openapi(chatCompletionsRoute, async (c) => {
               try { const j = JSON.parse(d); const delta = j.choices?.[0]?.delta?.content ?? j.choices?.[0]?.message?.content ?? ''; if (delta) text += delta; } catch {}
             }
           }
-          if (text) { await db.update(messages).set({ content: text }).where(eq(messages.id, assistantMessageId!)).catch(()=>{}); await db.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, body.conversationId!)).catch(()=>{}); }
+          if (assistantMessageId && text) { await db.update(messages).set({ content: text }).where(eq(messages.id, assistantMessageId!)).catch(()=>{}); await db.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, body.conversationId!)).catch(()=>{}); }
+          const est = Math.ceil(((text || accumulated)?.length || 0)/4) || 1;
+          await deductCredits(userId, -Math.max(1, Math.min(2000, est)), 'chat stream ' + (body.model || 'qwen')).catch(()=>{});
         }
       }
     },
