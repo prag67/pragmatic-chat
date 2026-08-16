@@ -1,33 +1,69 @@
-import { pgTable, text, timestamp, boolean, integer, jsonb, uuid, varchar, primaryKey, index } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, integer, jsonb, uuid, varchar, index } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
-// --- users (replaces Mongoose User) ---
-export const users = pgTable('users', {
+// --- Better Auth core tables (drizzleAdapter, provider pg, generateId uuid) ---
+
+export const user = pgTable('user', {
   id: uuid('id').primaryKey().defaultRandom(),
-  email: varchar('email', { length: 320 }).notNull().unique(),
-  emailVerified: boolean('email_verified').default(false).notNull(),
-  name: varchar('name', { length: 120 }),
-  passwordHash: text('password_hash'),
-  avatarUrl: text('avatar_url'),
-  role: varchar('role', { length: 20 }).default('user').notNull(), // user | admin
-  provider: varchar('provider', { length: 20 }).default('local').notNull(), // local | oidc | saml
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  name: text('name').notNull(),
+  email: text('email').notNull().unique(),
+  emailVerified: boolean('email_verified').notNull().default(false),
+  image: text('image'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  role: varchar('role', { length: 20 }).default('user').notNull(),
 });
 
-// --- sessions (replaces connect-mongo / express-session) ---
-export const sessions = pgTable('sessions', {
-  id: text('id').primaryKey(),
-  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-  refreshToken: text('refresh_token').notNull(),
+export const session = pgTable('session', {
+  id: uuid('id').primaryKey().defaultRandom(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-});
+  token: text('token').notNull().unique(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  ipAddress: text('ip_address'),
+  userAgent: text('user_agent'),
+  userId: uuid('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+}, (t) => [
+  index('session_userId_idx').on(t.userId),
+]);
+
+export const account = pgTable('account', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  accountId: text('account_id').notNull(),
+  providerId: text('provider_id').notNull(),
+  userId: uuid('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  accessToken: text('access_token'),
+  refreshToken: text('refresh_token'),
+  idToken: text('id_token'),
+  accessTokenExpiresAt: timestamp('access_token_expires_at', { withTimezone: true }),
+  refreshTokenExpiresAt: timestamp('refresh_token_expires_at', { withTimezone: true }),
+  scope: text('scope'),
+  password: text('password'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('account_userId_idx').on(t.userId),
+]);
+
+export const verification = pgTable('verification', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  identifier: text('identifier').notNull(),
+  value: text('value').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, (t) => [
+  index('verification_identifier_idx').on(t.identifier),
+]);
+
+// Backwards compat alias (plural) — keep referencing same table via view? But we expose plural alias for legacy code.
+export const users = user;
+export const sessions = session;
 
 // --- conversations (replaces Convo) ---
 export const conversations = pgTable('conversations', {
   id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  userId: uuid('user_id').references(() => user.id, { onDelete: 'cascade' }).notNull(),
   title: varchar('title', { length: 500 }),
   model: varchar('model', { length: 120 }),
   endpoint: varchar('endpoint', { length: 60 }).default('qwen'),
@@ -42,8 +78,8 @@ export const conversations = pgTable('conversations', {
 export const messages = pgTable('messages', {
   id: uuid('id').primaryKey().defaultRandom(),
   conversationId: uuid('conversation_id').references(() => conversations.id, { onDelete: 'cascade' }).notNull(),
-  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-  role: varchar('role', { length: 20 }).notNull(), // user | assistant | system | tool
+  userId: uuid('user_id').references(() => user.id, { onDelete: 'cascade' }).notNull(),
+  role: varchar('role', { length: 20 }).notNull(),
   content: text('content').notNull(),
   model: varchar('model', { length: 120 }),
   tokenCount: integer('token_count'),
@@ -58,37 +94,37 @@ export const messages = pgTable('messages', {
 // --- files (replaces File) ---
 export const files = pgTable('files', {
   id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  userId: uuid('user_id').references(() => user.id, { onDelete: 'cascade' }).notNull(),
   conversationId: uuid('conversation_id').references(() => conversations.id, { onDelete: 'set null' }),
   messageId: uuid('message_id').references(() => messages.id, { onDelete: 'set null' }),
   filename: varchar('filename', { length: 500 }).notNull(),
   originalName: varchar('original_name', { length: 500 }).notNull(),
   mimeType: varchar('mime_type', { length: 200 }).notNull(),
   size: integer('size').notNull(),
-  storagePath: text('storage_path').notNull(), // /uploads/...
+  storagePath: text('storage_path').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
-// --- api keys / balances (replaces Balance, Key, Transaction) ---
+// --- balances / transactions ---
 export const balances = pgTable('balances', {
-  userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').primaryKey().references(() => user.id, { onDelete: 'cascade' }),
   tokenCredits: integer('token_credits').default(0).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const transactions = pgTable('transactions', {
   id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  userId: uuid('user_id').references(() => user.id, { onDelete: 'cascade' }).notNull(),
   amount: integer('amount').notNull(),
-  type: varchar('type', { length: 40 }).notNull(), // credit | debit
+  type: varchar('type', { length: 40 }).notNull(),
   reason: varchar('reason', { length: 200 }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
-// --- presets / prompts (simplified from LibreChat) ---
+// --- presets / prompts ---
 export const presets = pgTable('presets', {
   id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  userId: uuid('user_id').references(() => user.id, { onDelete: 'cascade' }).notNull(),
   title: varchar('title', { length: 200 }).notNull(),
   data: jsonb('data').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -96,10 +132,17 @@ export const presets = pgTable('presets', {
 
 export const conversationsRelations = relations(conversations, ({ many, one }) => ({
   messages: many(messages),
-  user: one(users, { fields: [conversations.userId], references: [users.id] }),
+  user: one(user, { fields: [conversations.userId], references: [user.id] }),
 }));
 
 export const messagesRelations = relations(messages, ({ one }) => ({
   conversation: one(conversations, { fields: [messages.conversationId], references: [conversations.id] }),
-  user: one(users, { fields: [messages.userId], references: [users.id] }),
+  user: one(user, { fields: [messages.userId], references: [user.id] }),
+}));
+
+export const userRelations = relations(user, ({ many }) => ({
+  sessions: many(session),
+  accounts: many(account),
+  conversations: many(conversations),
+  messages: many(messages),
 }));

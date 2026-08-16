@@ -1,0 +1,29 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.0-pg16
+        env:
+          POSTGRES_DB: pragmatic
+          POSTGRES_USER: pragmatic
+          POSTGRES_PASSWORD: pragmatic
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd="pg_isready -U pragmatic -d pragmatic"
+          --health-interval=5s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm --workspace apps/api run db:migrate
+        env:
+          DATABASE_URL: postgres://pragmatic:pragmatic@localhost:5433/pragmatic
+          BETTER_AUTH_SECRET: test-secret-32-chars-min-1234567890abcdef
+          BETTER_AUTH_URL: http://localhost:4000
+      - run: npm test

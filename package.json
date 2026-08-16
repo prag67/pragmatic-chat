@@ -3,7 +3,10 @@
   "private": true,
   "version": "0.1.0",
   "packageManager": "npm@10.8.2",
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev:api": "npm --workspace apps/api run dev",
     "dev:web": "npm --workspace apps/web run dev",
@@ -11,7 +14,10 @@
     "build": "npm --workspace apps/api run build && npm --workspace apps/web run build",
     "db:generate": "npm --workspace apps/api run db:generate",
     "db:migrate": "npm --workspace apps/api run db:migrate",
-    "db:studio": "npm --workspace apps/api run db:studio"
+    "db:studio": "npm --workspace apps/api run db:studio",
+    "test": "npm --workspace apps/api run test:ci && npm --workspace apps/web run test",
+    "test:ci": "npm --workspace apps/api run test:ci",
+    "lint": "echo no lint configured"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

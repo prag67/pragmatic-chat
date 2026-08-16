@@ -1,6 +1,8 @@
 node_modules
 dist
-drizzle
 .env
 uploads
 *.log
+# keep drizzle migrations
+!apps/api/drizzle
+!apps/api/drizzle/**
