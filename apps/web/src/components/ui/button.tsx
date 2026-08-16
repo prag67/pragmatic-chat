@@ -4,6 +4,7 @@ export function Button({ variant="primary", size="md", className, ...p }: any) {
   const variants: any = {
     primary: "bg-ink text-white hover:bg-ink-800 shadow-soft active:scale-[0.98]",
     jade: "bg-jade text-white hover:bg-jade-600 shadow-soft active:scale-[0.98]",
+    plum: "bg-plum text-white hover:bg-plum-600 shadow-soft active:scale-[0.98]",
     ghost: "hover:bg-sand-100 text-ink-800",
     outline: "border border-sand-300 bg-white hover:bg-sand-100",
     subtle: "bg-sand-100 hover:bg-sand-200 text-ink",

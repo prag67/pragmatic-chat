@@ -129,4 +129,87 @@ describe('Better Auth', () => {
     const scalar = await request(handler).get('/scalar');
     expect(scalar.status).toBe(200);
   });
+
+  it('balances me requires auth', async () => {
+    const handler = getApp();
+    const res = await request(handler).get('/api/balances/me');
+    expect(res.status).toBe(401);
+    const tx = await request(handler).get('/api/balances/transactions');
+    expect(tx.status).toBe(401);
+  });
+
+  it('balances me returns 0 on first auth and transactions empty', async () => {
+    const handler = getApp();
+    const email = `bal-${Date.now()}@example.com`;
+    await request(handler).post('/api/auth/sign-up/email').send({ email, password: 'Password123!', name: 'Bal' });
+    const signIn = await request(handler).post('/api/auth/sign-in/email').send({ email, password: 'Password123!' });
+    const cookie = (signIn.headers['set-cookie'] as string[]).join('; ');
+    const me = await request(handler).get('/api/balances/me').set('Cookie', cookie);
+    expect(me.status).toBe(200);
+    expect(me.body.tokenCredits).toBe(0);
+    expect(me.body.userId).toBeDefined();
+    const me2 = await request(handler).get('/api/balances').set('Cookie', cookie);
+    expect(me2.status).toBe(200);
+    expect(me2.body.tokenCredits).toBe(0);
+    const tx = await request(handler).get('/api/balances/transactions').set('Cookie', cookie);
+    expect(tx.status).toBe(200);
+    expect(Array.isArray(tx.body)).toBe(true);
+  });
+
+  it('presets CRUD lifecycle', async () => {
+    const handler = getApp();
+    const email = `preset-${Date.now()}@example.com`;
+    await request(handler).post('/api/auth/sign-up/email').send({ email, password: 'Password123!', name: 'Preset' });
+    const signIn = await request(handler).post('/api/auth/sign-in/email').send({ email, password: 'Password123!' });
+    const cookie = (signIn.headers['set-cookie'] as string[]).join('; ');
+
+    const unauthed = await request(handler).get('/api/presets');
+    expect(unauthed.status).toBe(401);
+
+    const list0 = await request(handler).get('/api/presets').set('Cookie', cookie);
+    expect(list0.status).toBe(200);
+    expect(Array.isArray(list0.body)).toBe(true);
+
+    const created = await request(handler).post('/api/presets').set('Cookie', cookie).send({ title: 'My preset', data: { model: 'qwen-plus', temperature: 0.7 } });
+    expect(created.status).toBe(201);
+    expect(created.body.id).toBeDefined();
+    expect(created.body.title).toBe('My preset');
+    const pid = created.body.id;
+
+    const list1 = await request(handler).get('/api/presets').set('Cookie', cookie);
+    expect(list1.body.length).toBe(1);
+
+    const got = await request(handler).get(`/api/presets/${pid}`).set('Cookie', cookie);
+    expect(got.status).toBe(200);
+    expect(got.body.title).toBe('My preset');
+
+    const patched = await request(handler).patch(`/api/presets/${pid}`).set('Cookie', cookie).send({ title: 'Renamed', data: { model: 'qwen-max', temperature: 0.5 } });
+    expect(patched.status).toBe(200);
+    expect(patched.body.title).toBe('Renamed');
+    expect(patched.body.data.model).toBe('qwen-max');
+
+    const del = await request(handler).delete(`/api/presets/${pid}`).set('Cookie', cookie);
+    expect(del.status).toBe(200);
+    expect(del.body.ok).toBe(true);
+
+    const after = await request(handler).get(`/api/presets/${pid}`).set('Cookie', cookie);
+    expect(after.status).toBe(404);
+  });
+
+  it('presets isolation between users', async () => {
+    const handler = getApp();
+    const emailA = `isoA-${Date.now()}@example.com`;
+    const emailB = `isoB-${Date.now()}@example.com`;
+    await request(handler).post('/api/auth/sign-up/email').send({ email: emailA, password: 'Password123!', name: 'A' });
+    await request(handler).post('/api/auth/sign-up/email').send({ email: emailB, password: 'Password123!', name: 'B' });
+    const sA = await request(handler).post('/api/auth/sign-in/email').send({ email: emailA, password: 'Password123!' });
+    const sB = await request(handler).post('/api/auth/sign-in/email').send({ email: emailB, password: 'Password123!' });
+    const cA = (sA.headers['set-cookie'] as string[]).join('; ');
+    const cB = (sB.headers['set-cookie'] as string[]).join('; ');
+    const cr = await request(handler).post('/api/presets').set('Cookie', cA).send({ title: 'A only', data: { x: 1 } });
+    const pid = cr.body.id;
+    const bGet = await request(handler).get(`/api/presets/${pid}`).set('Cookie', cB);
+    expect(bGet.status).toBe(404);
+    await request(handler).delete(`/api/presets/${pid}`).set('Cookie', cA);
+  });
 });

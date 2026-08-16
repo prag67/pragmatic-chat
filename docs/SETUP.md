@@ -50,9 +50,9 @@ npx @better-auth/cli generate --output src/db/auth-schema.ts
 ## Tests
 
 ```bash
-npm --workspace apps/api run test:ci   # vitest+supertest (11 tests)
-npm test                              # root workspaces
-npm --workspace apps/web run test     # RTL (TODO slice 2)
+npm --workspace apps/api run test:ci   # vitest+supertest (21 tests: auth+balances/presets)
+npm test                              # root workspaces (api + web)
+npm --workspace apps/web run test     # RTL 5 tests incl. BalanceWidget/Presets
 npx playwright test                   # e2e (TODO)
 ```
 
@@ -64,6 +64,11 @@ No server listen when `NODE_ENV=test` / `VITEST`.
 - `/v2/` → :5173 Vite preview `base:'/v2/'` (`preview.allowedHosts:true`)
 - `/v2/health` & `/v2/api/` → :4000 (`proxy_buffering off`, `proxy_read_timeout 600s`)
 - Cutover: flip `/` to :5173/:4000, keep :3080 2w rollback.
+
+## Balances & Presets (slice 3)
+- `GET /api/balances/me` (+ `/api/balances/`) auto-creates `balances` row `tokenCredits 0`; `GET /api/balances/transactions?limit=&offset=` lists ledger.
+- `GET/POST /api/presets`, `GET/PATCH/DELETE /api/presets/:id` — user-scoped JSONB presets; see `docs/billing.md` + `/doc#presets`.
+- Web: `Sidebar` embeds `BalanceWidget` (jade card + tx toggle) + `PresetsModal` (plum) via `lib/balances.ts` / `lib/presets.ts`.
 
 ## File upload
 `POST /api/files/upload` multipart `file` → `./uploads` (shared `../librechat/uploads` via volume). `hono/body-limit` 20MB.
