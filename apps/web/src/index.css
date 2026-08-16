@@ -1,3 +1,21 @@
-@tailwind base; @tailwind components; @tailwind utilities;
-:root { --bg: 0 0% 100%; --fg: 240 10% 3.9%; }
-body { @apply bg-white text-zinc-900 antialiased; font-family: Inter, system-ui, sans-serif; }
+@import url('https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 248 247 244;
+  --fg: 10 14 26;
+}
+* { @apply border-sand-200; }
+html { @apply scroll-smooth; }
+body {
+  @apply bg-sand text-ink antialiased;
+  font-family: 'Prompt','Noto Sans Thai',system-ui,sans-serif;
+  font-feature-settings: 'ss01' 1;
+}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { @apply bg-mist-500/40 rounded-full; }
+::-webkit-scrollbar-track { @apply bg-transparent; }
+*:focus-visible { @apply outline-none ring-2 ring-jade/30 ring-offset-2 ring-offset-sand; }
+h1, h2 { @apply font-display tracking-tight; }

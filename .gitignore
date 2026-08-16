@@ -6,3 +6,5 @@ uploads
 # keep drizzle migrations
 !apps/api/drizzle
 !apps/api/drizzle/**
+# web tsc emit stray js
+apps/web/src/**/*.js
