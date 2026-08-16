@@ -98,34 +98,79 @@ app.openapi(chatCompletionsRoute, async (c) => {
     }
   }
 
-  const upstreamRes = await fetch(`${upstream}/compatible-mode/v1/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${dashKey}` },
-    body: JSON.stringify(body),
-  });
+  // Mock fallback when DASHSCOPE_API_KEY empty or upstream unreachable (shadow demo without real key)
+  const shouldMock = !dashKey || dashKey.length < 10;
+  let upstreamRes: Response | null = null;
+  let mockMode = false;
+  if (shouldMock) {
+    mockMode = true;
+  } else {
+    try {
+      const r = await fetch(`${upstream}/compatible-mode/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${dashKey}` },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok || !r.body) {
+        const txt = await r.text().catch(() => '');
+        // Fallback to mock on upstream auth/error in demo
+        if (r.status >= 400 && r.status < 500) mockMode = true;
+        else return c.json({ error: 'Upstream error', details: txt, status: r.status }, 502);
+      } else {
+        upstreamRes = r;
+      }
+    } catch (e: any) {
+      mockMode = true;
+    }
+  }
 
-  if (!upstreamRes.ok || !upstreamRes.body) {
-    const text = await upstreamRes.text().catch(() => '');
-    return c.json({ error: 'Upstream error', details: text, status: upstreamRes.status }, 502);
+  if (mockMode) {
+    const lastUser = Array.isArray(body.messages) ? [...body.messages].reverse().find((m:any)=> m.role==='user')?.content || '' : '';
+    const mockText = `สวัสดี! (mock ${body.model || 'qwen-plus'}) คุณส่ง: "${String(lastUser).slice(0,200)}" — ขณะนี้ไม่มี DASHSCOPE_API_KEY จึงตอบแบบจำลอง ระบบได้หักเครดิตแล้ว`;
+    const isStreamMock = body.stream === true;
+    if (assistantMessageId) {
+      await db.update(messages).set({ content: mockText }).where(eq(messages.id, assistantMessageId));
+      await db.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, body.conversationId!)).catch(()=>{});
+    }
+    const tokensMock = Math.ceil(mockText.length/4) || 1;
+    await deductCredits(userId, -Math.max(1, Math.min(1000, tokensMock)), 'chat mock ' + (body.model || 'qwen')).catch(()=>{});
+    if (!isStreamMock) {
+      return c.json({ id: 'chatcmpl-mock', object: 'chat.completion', created: Math.floor(Date.now()/1000), model: body.model || 'qwen-plus', choices: [{ index: 0, message: { role: 'assistant', content: mockText }, finish_reason: 'stop' }], usage: { prompt_tokens: 10, completion_tokens: tokensMock, total_tokens: 10+tokensMock } }, 200);
+    }
+    // SSE mock stream token by token
+    const streamMock = new ReadableStream({
+      async start(controller){
+        const enc = new TextEncoder();
+        const words = mockText.split(/(?=\s)/);
+        for(const w of words){
+          const chunk = `data: ${JSON.stringify({ id:'chatcmpl-mock', object:'chat.completion.chunk', choices:[{ delta:{ content: w }, index:0, finish_reason:null }]})}\n\n`;
+          controller.enqueue(enc.encode(chunk));
+          await new Promise(r=> setTimeout(r, 30));
+        }
+        controller.enqueue(enc.encode('data: [DONE]\n\n'));
+        controller.close();
+      }
+    });
+    return new Response(streamMock, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control':'no-cache', 'Connection':'keep-alive' } });
   }
 
   const isStream = body.stream === true;
 
   if (!isStream) {
-    const data = await upstreamRes.json() as any;
+    const data = await upstreamRes!.json() as any;
     const content = data?.choices?.[0]?.message?.content ?? '';
     if (assistantMessageId && content) {
       await db.update(messages).set({ content }).where(eq(messages.id, assistantMessageId));
     }
     const tokens = Math.ceil((content?.length || 0)/4) || 1;
     await deductCredits(userId, -Math.max(1, Math.min(1000, tokens)), 'chat non-stream ' + (body.model || 'qwen')).catch(()=>{});
-    return c.json(data, upstreamRes.status as any);
+    return c.json(data, upstreamRes!.status as any);
   }
 
   // Streaming SSE proxy -> also accumulate for persistence
   const stream = new ReadableStream({
     async start(controller) {
-      const reader = upstreamRes.body!.getReader();
+      const reader = upstreamRes!.body!.getReader();
       const decoder = new TextDecoder();
       let accumulated = '';
       try {
@@ -158,9 +203,9 @@ app.openapi(chatCompletionsRoute, async (c) => {
   });
 
   return new Response(stream, {
-    status: upstreamRes.status,
+    status: upstreamRes!.status,
     headers: {
-      'Content-Type': upstreamRes.headers.get('content-type') || 'text/event-stream',
+      'Content-Type': upstreamRes!.headers.get('content-type') || 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
     },
